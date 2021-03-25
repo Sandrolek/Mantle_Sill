@@ -20,3 +20,8 @@
 - летим в 0;0
 - садимся
 - выводим общее время работы
+
+Команды rosbag:
+1 день: rosbag record /aruco_map/visualization /wp_markers /main_camera/image_raw /vehicle_marker /rangefinder/range
+2 день: rosbag record /aruco_map/visualization /wp_markers /main_camera/image_raw /vehicle_marker /rangefinder/range /Detect
+3 день: rosbag record /aruco_map/visualization /wp_markers /main_camera/image_raw /vehicle_marker /rangefinder/range /Detect /aruco_map/pose
