@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# подключаем нужные либы
 import rospy
 import numpy as np
 import time
@@ -22,6 +23,7 @@ from pyzbar import pyzbar
 
 bridge = CvBridge()
 
+# инициализируем ноду и подключаем сервисы
 rospy.init_node('flight')
 
 get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
@@ -30,6 +32,7 @@ set_position = rospy.ServiceProxy('set_position', srv.SetPosition)
 land = rospy.ServiceProxy('land', Trigger)
 arming = rospy.ServiceProxy('mavros/cmd/arming', CommandBool)
 
+# константы
 TIME_RATE = 0.1
 TIME_STABLE = 3
 TIME_UP = 3
@@ -44,6 +47,7 @@ FLY_HEIGHT = 1.3
 polygon_x = 3.2
 polygon_y = 2.4
 
+# публикаторы в топики
 debug = rospy.Publisher('debug', Image, queue_size=1)
 thresh_pub = rospy.Publisher('thresh', Image, queue_size=1)
 detect = rospy.Publisher('/Detect', Image, queue_size=1)
@@ -62,10 +66,12 @@ cy = 0
 
 f = open("Record.txt", 'w')
 
+# калбэк на топик, в который публикует telem.py
 def telem_rate(msg):
 
     f.write(str(round(msg.data[0], 2)) + '\t' + str(round(msg.data[1], 2)) + '\t' + str(round(msg.data[2], 2)) + '\n')
 
+# калбэк на топик камеры, только для отладки
 def thresh_cb(data):
     frame = bridge.imgmsg_to_cv2(data, 'bgr8')
 
@@ -75,6 +81,7 @@ def thresh_cb(data):
 
     thresh_pub.publish(bridge.cv2_to_imgmsg(thresh, 'mono8'))
 
+# функция полета в точку
 def navigate_wait(x=0, y=0, z=0, yaw=math.radians(90), speed=0.3, frame_id='', auto_arm=False, tolerance=0.15):
     navigate(x=x, y=y, z=z, yaw=yaw, speed=speed, frame_id=frame_id, auto_arm=auto_arm)
 
@@ -126,6 +133,7 @@ def image_callback(data):
     image_pub.publish(bridge.cv2_to_imgmsg(frame, 'bgr8'))
     detect.publish(bridge.cv2_to_imgmsg(frame, 'bgr8'))
 
+# функция получения сообщения из qr кода, работает в связке с image_callback
 def catch_qr():
 
     image_sub = rospy.Subscriber('main_camera/image_raw_throttled', Image, image_callback, queue_size=1)
@@ -152,6 +160,7 @@ def catch_qr():
 
     return qr_data
 
+# нахождение направления стрелки без кропа, лучше чем в первый день, ищем тот контур, который "ближе всего" к одному из вариантов в модели
 def find_arrow(data):
     print("finding Arrow")
     
@@ -210,6 +219,7 @@ def find_arrow(data):
 
     return num
 
+# нахождение центра наибольшего пятна с клевером на тумбе
 def getCenterOfContour_callback(data):
     global cx
     global cy
@@ -236,6 +246,7 @@ def getCenterOfContour_callback(data):
 def normalize(x, y):
     return x / math.sqrt(x ** 2 + y ** 2), y / math.sqrt(x ** 2 + y ** 2)
 
+# посадка на тумбу, как в первом дне
 def preciseLanding():  
     global cx
     global cy
@@ -268,7 +279,7 @@ def preciseLanding():
     arming(False)
     cx, cy = 0, 0
 
-
+# топики записи телеметрии и отладки изображения и начало программы
 telem_sub = rospy.Subscriber('/telem', Float32MultiArray, telem_rate, queue_size=1)
 thresh_sub = rospy.Subscriber('main_camera/image_raw_throttled', Image, thresh_cb, queue_size=1)
 print("Started")
@@ -284,10 +295,12 @@ print("Got to Started point")
 navigate_wait(x=0.4, y=0.8, z=1, frame_id='aruco_map')
 print("Got to start scan point")
 
+# считывание qr
 s = catch_qr()
 
 print(s)
 
+# обработка qr и вычленение оттуда данных
 s_obstucle = ""
 
 for i in range(len(s)):
@@ -318,6 +331,7 @@ num_order = s[len(s)-1]
 
 print("Order number:", num_order)
 
+# полет к стрелке
 navigate_wait(x=arrow_x, y=arrow_y, z=FLY_HEIGHT, frame_id='aruco_map', speed=1)
 print("Got to arrow point")
 
@@ -327,6 +341,7 @@ direction = find_arrow(rospy.wait_for_message('main_camera/image_raw', Image))
 
 sector = ''
 
+# выбор сектора и посадка
 if direction == 0:
     sector = 'B'
     print("Sector B required")
@@ -358,6 +373,7 @@ preciseLanding()
 
 rospy.sleep(5)
 
+# взлет с тумбы
 print(str(num_order) + " delivered in Sector" + sector)
 
 rospy.sleep(6)
@@ -374,6 +390,7 @@ print("Landing")
 
 land()
 
+# отписка от топиков и подсчет времени
 telem_sub.unregister()
 thresh_sub.unregister()
 

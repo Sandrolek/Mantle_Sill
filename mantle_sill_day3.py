@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# подключение либ
 import rospy
 import numpy as np
 import time
@@ -23,6 +24,7 @@ from pyzbar import pyzbar
 
 bridge = CvBridge()
 
+# инициализация ноды и сервисов
 rospy.init_node('flight')
 
 get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
@@ -34,6 +36,7 @@ set_effect = rospy.ServiceProxy('led/set_effect', SetLEDEffect)
 
 set_effect(r=0, b=0, g=0)
 
+# константы
 TIME_RATE = 0.1
 TIME_STABLE = 3
 TIME_UP = 3
@@ -48,6 +51,7 @@ FLY_HEIGHT = 1.3
 polygon_x = 3.2
 polygon_y = 2.4
 
+# создание публикаторов
 debug = rospy.Publisher('debug', Image, queue_size=1)
 thresh_pub = rospy.Publisher('thresh', Image, queue_size=1)
 detect = rospy.Publisher('/Detect', Image, queue_size=1)
@@ -57,6 +61,7 @@ set_effect = rospy.ServiceProxy('led/set_effect', SetLEDEffect)
 
 GAZEBO = False
 
+# маски для стрелки
 if GAZEBO:
     masks = {
         'red': ((169, 100, 155), (179, 255, 255), (0, 100, 155), (15, 255, 255)),
@@ -83,10 +88,12 @@ cy = 0
 
 f = open("Record.txt", 'w')
 
+# калбэк на тпоик из telem.py
 def telem_rate(msg):
 
     f.write(str(round(msg.data[0], 2)) + '\t' + str(round(msg.data[1], 2)) + '\t' + str(round(msg.data[2], 2)) + '\n')
 
+# калбэк на изображение с камеры, нужен только для теста.
 def thresh_cb(data):
     frame = bridge.imgmsg_to_cv2(data, 'bgr8')
 
@@ -96,6 +103,7 @@ def thresh_cb(data):
 
     thresh_pub.publish(bridge.cv2_to_imgmsg(thresh, 'mono8'))
 
+# функция полета в точку
 def navigate_wait(x=0, y=0, z=0, yaw=math.radians(90), speed=0.3, frame_id='', auto_arm=False, tolerance=0.15):
     navigate(x=x, y=y, z=z, yaw=yaw, speed=speed, frame_id=frame_id, auto_arm=auto_arm)
 
@@ -147,6 +155,7 @@ def image_callback(data):
     image_pub.publish(bridge.cv2_to_imgmsg(frame, 'bgr8'))
     detect.publish(bridge.cv2_to_imgmsg(frame, 'bgr8'))
 
+# получение сообщения из qr кода
 def catch_qr():
 
     image_sub = rospy.Subscriber('main_camera/image_raw_throttled', Image, image_callback, queue_size=1)
@@ -173,6 +182,7 @@ def catch_qr():
 
     return qr_data
 
+# определение направления стрелки (+ цвета)
 def find_arrow(data):
     print("finding Arrow")
     
@@ -196,7 +206,8 @@ def find_arrow(data):
 
     is_color = True
     arrow_color = 0
-
+	
+    # идет проверка по всем цветам кроме черного
     for mask in masks:
         if len(masks[mask]) == 4:
             #print("Red mask")
@@ -231,6 +242,7 @@ def find_arrow(data):
         print("Color:", arrow_color)
         thresh = now_mask
 
+    # на этом шаге нам уже не важно какого цвета стрелка, мы просто работает с чернобелым изображением
     debug.publish(bridge.cv2_to_imgmsg(thresh, 'mono8'))
 
     contours, hierarchy = cv.findContours(thresh, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)[-2:]
@@ -298,6 +310,7 @@ def getCenterOfContour_callback(data):
 def normalize(x, y):
     return x / math.sqrt(x ** 2 + y ** 2), y / math.sqrt(x ** 2 + y ** 2)
 
+# никак не поменявшиеся с прошлых дней функции посадки
 def preciseLanding(need_z, indic):  
     global cx
     global cy
@@ -340,7 +353,7 @@ def preciseLanding(need_z, indic):
     arming(False)
     cx, cy = 0, 0
 
-
+# старт проги
 telem_sub = rospy.Subscriber('/telem', Float32MultiArray, telem_rate, queue_size=1)
 thresh_sub = rospy.Subscriber('main_camera/image_raw_throttled', Image, thresh_cb, queue_size=1)
 print("Started")
@@ -356,10 +369,12 @@ print("Got to Started point")
 navigate_wait(x=0.4, y=0.8, z=1, frame_id='aruco_map')
 print("Got to start scan point")
 
+# qr
 s = catch_qr()
 
 print(s)
 
+# обработка строки из qr кода
 s_obstucle = ""
 
 for i in range(len(s)):
@@ -390,6 +405,7 @@ num_order = s[len(s)-1]
 
 print("Order number:", num_order)
 
+# полет к стрелке
 navigate_wait(x=arrow_x, y=arrow_y, z=1.2, frame_id='aruco_map', speed=1)
 print("Got to arrow point")
 
@@ -401,6 +417,7 @@ arrow_color = arrow['color']
 
 sector = ''
 
+# выбор сектора и полет к тумбе
 if direction == 0:
     sector = 'B'
     print("Sector B required")
@@ -422,6 +439,7 @@ elif direction == 3:
     need_x = arrow_x + (polygon_x - arrow_x) / 2
     need_y = arrow_y
 
+# выбор высоты в зависимости от цвета и полет к тумбе
 if arrow_color == 'black':
     need_z = 1.5
     indic = 'black'
@@ -440,7 +458,7 @@ navigate_wait(x=need_x, y=need_y, z=need_z, frame_id='aruco_map')
 print("Got to point to find point")
 
 rospy.sleep(3)
-
+# посадка
 preciseLanding(need_z, indic)
 
 rospy.sleep(4)
@@ -450,7 +468,7 @@ set_effect(r=0, b=0, g=0)
 print(str(num_order) + " delivered in Sector" + sector)
 
 rospy.sleep(6)
-
+# взлет
 print("Takeoff")
 navigate_wait(z=1, yaw=float('nan'), auto_arm=True, frame_id='body', speed=1.5, tolerance=0.3)
 print("Took off")
@@ -463,6 +481,7 @@ print("Landing")
 
 land()
 
+# отписка от топиков и запись времени итогового
 telem_sub.unregister()
 thresh_sub.unregister()
 

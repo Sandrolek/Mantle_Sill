@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# подключаем нужные библиотеки
 import rospy
 import numpy as np
 import time
@@ -14,6 +18,7 @@ import math
 
 bridge = CvBridge()
 
+# инициализируем ноду и пдключаем сервисы
 rospy.init_node('flight')
 
 get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
@@ -22,6 +27,7 @@ set_position = rospy.ServiceProxy('set_position', srv.SetPosition)
 land = rospy.ServiceProxy('land', Trigger)
 arming = rospy.ServiceProxy('mavros/cmd/arming', CommandBool)
 
+# константы
 TIME_RATE = 0.1
 TIME_UP = 3
 TIME_DOWN = 3
@@ -41,6 +47,7 @@ relatives = {
 cx = 0
 cy = 0
 
+# функция полета в точку
 def navigate_wait(x=0, y=0, z=0, yaw=math.radians(90), speed=0.3, frame_id='', auto_arm=False, tolerance=0.15):
     navigate(x=x, y=y, z=z, yaw=yaw, speed=speed, frame_id=frame_id, auto_arm=auto_arm)
 
@@ -50,9 +57,11 @@ def navigate_wait(x=0, y=0, z=0, yaw=math.radians(90), speed=0.3, frame_id='', a
             break
         rospy.sleep(TIME_RATE)
 
+# функция определения направления стрелки
 def find_arrow(data):
     print("finding Arrow")
     
+    # создаем модель для машинного обучения, основываясь на уже полученных файлах
     samples = np.loadtxt('generalsamples.data', np.float32)
     responses = np.loadtxt('generalresponses.data', np.float32)
     responses = responses.reshape((responses.size, 1))
@@ -63,7 +72,8 @@ def find_arrow(data):
     print("model made")
 
     ############################# testing part #########################
-
+    
+    # обработка изображения
     im = bridge.imgmsg_to_cv2(data, 'bgr8')[110:150, 140:180]
     out = im.copy()
     gray = cv.cvtColor(im, cv.COLOR_BGR2GRAY)
@@ -81,6 +91,7 @@ def find_arrow(data):
 
     [x, y, w, h] = cv.boundingRect(cnt)
     try:
+	# преобразования для согласования форматов, на котором обучали модель и текущих контурах
         print("is contour")
         cv.rectangle(im, (x, y), (x + w, y + h), (0, 255, 0), 2)
         roi = thresh[y:y + h, x:x + w]
@@ -102,6 +113,7 @@ def find_arrow(data):
 
     return num
 
+# вспомогательная функция для приземления, изменяет переменные центра наибольшего контура
 def getCenterOfContour_callback(data):
     global cx
     global cy
@@ -125,9 +137,11 @@ def getCenterOfContour_callback(data):
 
     debug.publish(CvBridge().cv2_to_imgmsg(vis, 'bgr8'))
 
+# векторное преобразование
 def normalize(x, y):
     return x / math.sqrt(x ** 2 + y ** 2), y / math.sqrt(x ** 2 + y ** 2)
 
+# посадка на тумбу с изображением
 def preciseLanding():  
     global cx
     global cy
@@ -160,6 +174,7 @@ def preciseLanding():
     arming(False)
     cx, cy = 0, 0
 
+# взлет и полет к стрелке
 print("Started")
 start_time = time.time()
 print("start time:", start_time)
@@ -174,10 +189,12 @@ navigate_wait(x=1.2, y=1.2, z=FLY_HEIGHT, frame_id='aruco_map')
 print("Got to start scan point")
 rospy.sleep(2)
 
+# распознавание стрелки
 direction = find_arrow(rospy.wait_for_message('main_camera/image_raw', Image))
 
 sector = ''
 
+# выбор сектора и посадка на тумбу
 if direction == 0:
     print("Sector B required")
     sector = 'B'
@@ -201,6 +218,7 @@ rospy.sleep(5)
 
 print("3 delivered in Sector" + sector)
 
+# взлет с тумбы (в след прогах он работал:<3)
 arming(True)
 print("Start returning")
 navigate(x=0, y=0, z=0.5, speed=0.5, frame_id='body', auto_arm=True)
@@ -211,6 +229,7 @@ navigate_wait(x=0, y=0, z=FLY_HEIGHT, frame_id='aruco_map')
 print("Got to Started point")
 
 land()
+# расчет времени полета
 fly_time_sec = time.time() - start_time
 fly_time_str = str(int(fly_time_sec // 60)) + ' min ' + str(int(fly_time_sec % 60)) + ' sec'
 print("3 delivered in Sector" + sector + " for " + fly_time_str)
